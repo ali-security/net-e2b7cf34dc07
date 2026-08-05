@@ -5401,3 +5401,13 @@ func TestIssue66763Race(t *testing.T) {
 
 	<-donec
 }
+
+func TestTransportDoNotHangOnZeroMaxFrameSize(t *testing.T) {
+	tc := newTestClientConn(t)
+	tc.writeSettings(Setting{ID: SettingMaxFrameSize, Val: 0})
+	tc.wantFrameType(FrameSettings)
+
+	req, _ := http.NewRequest("POST", "https://dummy.tld/", strings.NewReader("body"))
+	tc.roundTrip(req)
+	// Previously, https://go.dev/issue/78476 caused an infinite hang here.
+}
