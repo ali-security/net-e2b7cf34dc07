@@ -1,0 +1,70 @@
+name: CI
+
+on:
+  push:
+    branches: [ master, main ]
+  pull_request:
+    branches: [ master, main ]
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        go-version: ['1.23']
+
+    defaults:
+      run:
+        shell: bash
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - name: Download dependencies
+      run: go mod download
+
+    - name: Verify dependencies
+      run: go mod verify
+
+    - name: Build module-zip helper
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        set -eux
+        HELPER=$(mktemp -d)
+        cp "$GITHUB_WORKSPACE/.github/create_mod.go" "$HELPER/"
+        cd "$HELPER"
+        go mod init example.com/mod
+        go get golang.org/x/mod@v0.24.0
+        go build -o "$RUNNER_TEMP/create_mod" ./create_mod.go
+
+    - name: Create module zip
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        set -eux
+        mkdir -p "$RUNNER_TEMP/out"
+        rm -rf "$GITHUB_WORKSPACE/.github"
+        "$RUNNER_TEMP/create_mod" golang.org/x/net v0.26.0 "$GITHUB_WORKSPACE" "$RUNNER_TEMP/out/v0.26.0.zip"
+
+    - name: Upload module zip
+      if: matrix.os == 'ubuntu-latest'
+      uses: actions/upload-artifact@v4
+      with:
+        name: module-zip
+        path: ${{ runner.temp }}/out/v0.26.0.zip
+        if-no-files-found: error
+
+    - name: Build
+      run: go build -v ./...
+
+    - name: Run tests
+      run: go test -v -race ./...
